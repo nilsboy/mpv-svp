@@ -1,0 +1,179 @@
+# Notes
+
+## Integration path
+
+SVP is exposed to mpv through VapourSynth. mpv must be built with
+`-Dvapoursynth=enabled`; the `vapoursynth` video filter then loads a `.vpy`
+script that reads `video_in` and writes `video_out`.
+
+Unlike RIFE, SVP's interpolation runs entirely inside the `svpflow1`/`svpflow2`
+VapourSynth plugins, so no SVP Manager process is required on Linux.
+
+- `svpflow1` searches for motion vectors: `Super` then `Analyse`.
+- `svpflow2` renders the interpolated frames: `SmoothFps`.
+
+## VapourSynth API 3 constraint
+
+The GPL `svpflow` release (4.3.0.168, 2019) is built against VapourSynth API 3.
+VapourSynth R79 is the last release that accepts API 3 plugins; R80 removed the
+API 3 compatibility layer, so loading `libsvpflow*_vs64.so` under R80 fails with
+`uses API 3, which is no longer supported`. The project therefore pins
+VapourSynth to **R79** everywhere (host build and snap).
+
+R79 still ships both `VapourSynth.h` (API 3) and `VapourSynth4.h` (API 4), and
+modern mpv/vspipe initialise it through the API 4 entry points, so pinning R79
+does not cost anything for the `std`/`resize` filters used here.
+
+## Executable-stack flag
+
+The 2019 Linux `svpflow` binaries were linked with an executable stack
+(`GNU_STACK RWE`). Modern glibc refuses to `dlopen` such objects
+(`cannot enable executable stack as shared object requires: Invalid argument`).
+`scripts/install-svpflow.sh` and the snap's `override-build` clear the
+`GNU_STACK` flag with `patchelf --clear-execstack` before installing. None of
+the code needs an executable stack.
+
+## No SVP Manager / no watermark
+
+SVP's documentation warns that the libs "require a SVP Manager running,
+otherwise you'll see a red rectangle around the video frame". That enforcement
+belongs to the closed-source `svpflow2` on Windows/macOS. The Linux GPL build
+used here renders clean frames with no Manager: a synthetic clip through
+`Super`/`Analyse`/`SmoothFps` produced zero red-border pixels across the tested
+frames.
+
+## GPU rendering
+
+`SmoothFps` `gpu` uses **OpenCL**, not Vulkan (`svpflow2` imports
+`clReleaseMemObject`). On an Intel iGPU the OpenCL runtime is
+`intel-opencl-icd` (Intel Compute Runtime / NEO), which the snap must bundle
+along with its ICD file. Without a usable OpenCL device, set `GPU_ID = 0` to
+render on the CPU, or SVP falls back to CPU automatically.
+
+The target i3-1315U has an Iris Xe (UHD) iGPU (Alder Lake), which Intel's NEO
+runtime supports. The test host here is a QEMU VM with a virtual VGA
+(`1234:1111`) and no OpenCL device, so GPU interpolation cannot be benchmarked
+on this machine; CPU rendering verifies the pipeline.
+
+## Environment observations
+
+- Build host: Ubuntu 26.04, x86_64, 4 cores, ~7.7 GB RAM. Disk is tight
+  (~3 GB free), so build trees under `/var/tmp` must be pruned after install.
+- No usable GPU and no display: QEMU virtual VGA, no `/dev/dri`, session type
+  `tty`. Wayland/PipeWire runtime behaviour can only be reasoned about, not
+  exercised, here.
+- Ubuntu 26.04 does not package VapourSynth, so it is built from source (or, on
+  the host, taken from the `vapoursynth==79` wheel) and mpv is built with
+  `-Dvapoursynth=enabled`.
+- `snapcraft` 9.1.3 is installed; `snapcraft pack --destructive-mode` on the
+  core26 base avoids LXD and reuses host build packages.
+
+## SVPflow plugin source
+
+The plugins are distributed by SVP as a GPL zip
+(`https://www.svp-team.com/files/gpl/svpflow-4.3.0.168.zip`). It contains
+`lib-linux/libsvpflow1_vs64.so` and `libsvpflow2_vs64.so`. The snap downloads
+this zip rather than cloning a source repository; the license text is installed
+alongside the snap's other licenses.
+
+## Performance: motion search is CPU-only
+
+`svpflow1` (`Super`, `Analyse`) does the motion-vector search entirely on the
+CPU; `ldd libsvpflow1_vs64.so` shows no OpenCL/Vulkan dependency, and the GPL
+source (`svpflow1-src.zip`) contains zero references to OpenCL, CUDA or Vulkan.
+Only `svpflow2` (`SmoothFps`) can render on the GPU, via OpenCL
+(`clCreateImage2D`, `clEnqueueNDRangeKernel`, ...). A "CPU maxed, GPU idle"
+report from `intel_gpu_top` is therefore expected: the GPU column only moves for
+the render half, and only when OpenCL actually engages.
+
+There is no way to move the search to the GPU with the GPL plugins. SVP's
+closed-source Windows/macOS build has GPU analysis and an NVOF (NVIDIA Optical
+Flow) path, and `svpflow2` even exports `SmoothFps_NVOF`, but that needs an
+NVIDIA GPU and the SVP Manager/licence, so it is irrelevant here.
+
+The `Super` `gpu` parameter is often mistaken for GPU search. From the source
+(`mvsuper.cpp`, `groupofplanes.cpp`): `gpu:1` only tells `SmoothFps` to expect
+an OpenCL renderer (`sharp=0`, no sub-pixel plane refinement), and `gpu:2` sets
+`minLevel=1`, i.e. it *skips the finest search level*. Both are quality/speed
+knobs for the CPU search, not offload. `gpu:2` also forces the OpenCL renderer,
+so it cannot be combined with the CPU-render fallback.
+
+Measured on this 4-vCPU host with a real 1920x1080 testsrc clip at 24 fps
+(single-threaded `Analyse` is the serial constraint; `svpflow1` parallelises
+poorly across frames — its per-frame work is internally locked):
+
+- `Analyse` cost scales with the search settings, from ~90 ms/frame for the
+  exhaustive `{}` default down to ~40 ms/frame for the `performance` preset.
+- `main.search.coarse.width` is the strongest cheap CPU lever: capping it at
+  480 was ~38% faster than SVP's default of 1050 with byte-identical output on
+  normal content (not a pathological test pattern).
+- `scale` (search *and* render at a fraction, then upscale) is the biggest
+  lever overall: ~2x at 0.5, at visible softness.
+- With the `performance` preset the whole 24->60 pipeline reaches ~50-60 output
+  fps on 4 cores. The previous default (`Analyse` params `{}`) managed ~34 fps.
+- mpv's `vapoursynth=concurrent-frames` has little effect: 3-4 is the sweet
+  spot, and more than that slightly hurts because the search serialises.
+- `--hwdec=auto-copy` offloads decoding and frees CPU for the search; only
+  copy-back decoders are compatible with a VapourSynth filter.
+
+The presets (`quality`/`balanced`/`performance`/`realtime`) and the per-run
+`user-data` tokens (`fps`, `rate`, `scale`, `coarse`, `skipfinest`, `preset`)
+are the levers; there is no GPU offload to gain beyond the render.
+
+## GPU rendering (OpenCL) specifics
+
+`SmoothFps` GPU rendering needs a working OpenCL platform with image support.
+The snap bundles `intel-opencl-icd` (NEO), `mesa-opencl-icd` (rusticl) and
+`ocl-icd-libopencl1`, plus the Intel runtime's dependencies (`libigc2`,
+`libigdfcl2` including `libopencl-clang.so.16`, `libigdgmm12`). The launcher
+regenerates the ICD vendor files under `$SNAP_USER_COMMON` because the staged
+`intel.icd` names an absolute `/usr` path that resolves to the base snap under
+confinement; it sets `OCL_ICD_VENDORS` to that directory.
+
+When GPU rendering cannot initialise, SVP reports
+`unable to init GPU-based renderer - code 65536/65791` and the script falls back
+to CPU rendering with a message. On a GPU with the right driver this should not
+happen; the usual causes are a missing ICD, no `/dev/dri/renderD*` access
+(the `opengl` interface grants it), or an unsupported OpenCL version.
+
+
+## Small sources
+
+SVPflow's hierarchical motion search needs enough resolution to build its
+pyramid; below roughly 3x the block size it fails with
+`SVAnalyse: non-valid number of levels`. `svp.vpy` catches this and passes
+frames through unchanged (with a message) instead of aborting playback, so a
+tiny test clip or a thumbnail-sized stream still plays.
+
+## Passing options through mpv
+
+mpv's `vapoursynth` filter defines a `user-data` suboption that it forwards to
+the `.vpy` as the global variable `user_data` (always defined, defaults to
+`""`); `vf_vapoursynth.c` sets it with `mapSetData(..., dtUtf8, ...)`. The
+script parses it for `fps`, `rate`, `preset`, `algo` and `gpu`, so the target
+rate can be changed per-invocation without editing the file.
+
+Two quirks worth remembering:
+
+- mpv's suboption parser treats a second `=` as another suboption separator, so
+  `user-data=fps=48` fails to parse. The value must be quoted:
+  `user-data="fps=48"` or `user-data=[fps=48]`, and the whole `--vf=` value
+  quoted from the shell. A bare `user-data=48` parses unquoted.
+- SVP's `rate:{num,den}` is a *multiplier* of the source rate unless
+  `abs:true` is set. The script therefore passes the multiplier (or, for an
+  absolute target, the `abs:true` form) and not `source x rate`, which would
+  multiply twice.
+
+The snap launcher splits the filter value at the first `:` so that
+`vapoursynth/svp.vpy:user-data=...` still resolves the relative script path to
+`$SNAP/vapoursynth/svp.vpy`; without that split the whole string was treated as
+the filename.
+
+It also detects a user-supplied `vapoursynth=` filter and appends
+`--vf-remove=@svp`, so combining `--vf=...` with `--profile=svp` (whose `vf-add`
+is labelled `@svp`) does not run SVP twice. An explicitly labelled
+`--vf-add=@svp:...` is left alone, since that replaces the profile's entry
+itself. Without the launcher (source checkout) the same `--vf-remove=@svp` is
+the user's responsibility.
+
+

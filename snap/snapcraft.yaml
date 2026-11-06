@@ -1,0 +1,379 @@
+name: mpv-svp
+version: "1.0.0"
+summary: mpv with SVP motion-interpolation frame rate conversion
+description: |
+  mpv built with VapourSynth support, bundled with the GPL SVPflow
+  (SmoothVideo Project) motion interpolation plugins and a ready-to-use script.
+  Enables real-time frame rate conversion, e.g. 1080p24 to 60 fps.
+
+  SVP renders on OpenCL; a GPU with an OpenCL runtime is recommended, and mpv
+  falls back to CPU rendering when no device is available.
+
+grade: stable
+confinement: strict
+base: core26
+
+platforms:
+  amd64:
+
+parts:
+  libplacebo:
+    plugin: meson
+    source: https://github.com/haasn/libplacebo.git
+    source-depth: 1
+    source-submodules: [3rdparty/glad, 3rdparty/Vulkan-Headers, 3rdparty/fast_float]
+    meson-parameters:
+      - --prefix=/usr
+      - --buildtype=release
+      - -Ddemos=false
+      - -Dtests=false
+      - -Dvulkan=enabled
+      - -Dshaderc=disabled
+    build-packages:
+      - build-essential
+      - meson
+      - ninja-build
+      - pkg-config
+      - libvulkan-dev
+      - liblcms2-dev
+    build-environment:
+      - PKG_CONFIG_PATH: "$CRAFT_STAGE/usr/lib/x86_64-linux-gnu/pkgconfig:$CRAFT_STAGE/usr/lib/pkgconfig:$CRAFT_STAGE/usr/share/pkgconfig"
+
+  vapoursynth:
+    plugin: meson
+    # R79 is the last release that accepts API 3 plugins, which the GPL SVPflow
+    # binaries require; R80 removed the API 3 compatibility layer.
+    source: https://github.com/vapoursynth/vapoursynth.git
+    source-tag: R79
+    source-depth: 1
+    meson-parameters:
+      - --prefix=/usr
+      - --buildtype=release
+      - -Denable_x86_asm=true
+    build-packages:
+      - build-essential
+      - meson
+      - ninja-build
+      - pkg-config
+      - cython3
+      - python3-dev
+      - zlib1g-dev
+      - libzimg-dev
+      - libvulkan-dev
+    stage-packages:
+      - libpython3.14
+      - libpython3.14-stdlib
+      - python3.14-minimal
+      - python3.14
+      - libzimg2
+      - libgomp1
+    after: [libplacebo]
+    override-build: |
+      craftctl default
+      # The stock .pc omits libdir, which consumers read to locate plugins.
+      mkdir -p "$CRAFT_PART_INSTALL/usr/lib/pkgconfig"
+      cat > "$CRAFT_PART_INSTALL/usr/lib/pkgconfig/vapoursynth.pc" <<'EOF'
+      prefix=/usr
+      libdir=/usr/lib
+      includedir=${pcfiledir}/../python3/dist-packages/vapoursynth/include
+
+      Name: vapoursynth
+      Description: A frameserver for the 21st century
+      Version: 79
+      Cflags: -I${includedir}
+      EOF
+      # Autoload plugins from the conventional /usr/lib/vapoursynth directory.
+      mkdir -p "$CRAFT_PART_INSTALL/usr/lib/vapoursynth"
+
+  svpflow:
+    plugin: nil
+    override-build: |
+      version="4.3.0.168"
+      mkdir -p "$CRAFT_PART_INSTALL/usr/lib/vapoursynth"
+      curl -fSL --retry 5 -o /tmp/svpflow.zip \
+        "https://www.svp-team.com/files/gpl/svpflow-${version}.zip"
+      unzip -q -o /tmp/svpflow.zip -d /tmp/svpflow
+      pkg="/tmp/svpflow/svpflow-${version}"
+      for so in libsvpflow1_vs64.so libsvpflow2_vs64.so; do
+        # The 2019 binaries request an executable stack, which modern glibc
+        # refuses to dlopen; none of the code needs it.
+        cp "$pkg/lib-linux/$so" "/tmp/$so"
+        patchelf --clear-execstack "/tmp/$so"
+        install -m644 "/tmp/$so" \
+          "$CRAFT_PART_INSTALL/usr/lib/vapoursynth/$so"
+      done
+      install -Dm644 "$pkg/licenses/svpflow1_gpl.txt" \
+        "$CRAFT_PART_INSTALL/usr/share/doc/svpflow/svpflow1_gpl.txt"
+    build-packages:
+      - curl
+      - unzip
+      - patchelf
+    after: [vapoursynth]
+
+  mpv:
+    plugin: meson
+    source: https://github.com/mpv-player/mpv.git
+    source-depth: 1
+    meson-parameters:
+      - --prefix=/usr
+      - --buildtype=release
+      - -Dvapoursynth=enabled
+      - -Dlibmpv=true
+      - -Dcplayer=true
+      - -Dmanpage-build=disabled
+      - -Dbuild-date=false
+    build-packages:
+      - build-essential
+      - meson
+      - ninja-build
+      - pkg-config
+      - libavcodec-dev
+      - libavfilter-dev
+      - libavformat-dev
+      - libavutil-dev
+      - libswresample-dev
+      - libswscale-dev
+      - libass-dev
+      - libvulkan-dev
+      - libx11-dev
+      - libxext-dev
+      - libxrandr-dev
+      - libxfixes-dev
+      - libxpresent-dev
+      - libxss-dev
+      - libxv-dev
+      - libxkbcommon-dev
+      - libwayland-dev
+      - wayland-protocols
+      - libdrm-dev
+      - libgbm-dev
+      - libegl-dev
+      - libgl-dev
+      - libpulse-dev
+      - libasound2-dev
+      - libpipewire-0.3-dev
+      - libuchardet-dev
+      - libbluray-dev
+      - libdvdnav-dev
+      - libcdio-dev
+      - libcdio-paranoia-dev
+      - liblcms2-dev
+      - libsixel-dev
+      - liblua5.2-dev
+      - libmujs-dev
+      - libarchive-dev
+      - libsndio-dev
+      - librubberband-dev
+      - libva-dev
+      - libvdpau-dev
+      - libzimg-dev
+      - libjpeg-dev
+      - libzstd-dev
+      - python3-dev
+      - cython3
+    # mpv links the codec/GPU stack dynamically; the strict-confinement snap
+    # must bundle it rather than rely on the host.
+    stage-packages:
+      - i965-va-driver
+      - intel-media-va-driver
+      - intel-opencl-icd
+      - mesa-opencl-icd
+      - ocl-icd-libopencl1
+      - libaom3
+      - libarchive13t64
+      - libasound2t64
+      - libass9
+      - libasyncns0
+      - libavcodec62
+      - libavfilter11
+      - libavformat62
+      - libavutil60
+      - libbluray3
+      - libbs2b0
+      - libcairo-gobject2
+      - libcairo2
+      - libcdio-cdda2t64
+      - libcdio-paranoia2t64
+      - libcdio19t64
+      - libchromaprint1
+      - libcjson1
+      - libcodec2-1.2
+      - libdatrie1
+      - libdav1d7
+      - libdisplay-info3
+      - libdrm-amdgpu1
+      - libdrm-intel1
+      - libdrm2
+      - libdvdnav4
+      - libdvdread8t64
+      - libegl-mesa0
+      - libegl1
+      - libelf1t64
+      - libfftw3-double3
+      - libflac14
+      - libflite1
+      - libfontconfig1
+      - libfribidi0
+      - libgbm1
+      - libgdk-pixbuf-2.0-0
+      - libgl1
+      - libgl1-mesa-dri
+      - libglvnd0
+      - libglx-mesa0
+      - libglx0
+      - libglycin-2-0
+      - libgme0
+      - libgomp1
+      - libgraphite2-3
+      - libgsm1
+      - libharfbuzz0b
+      - libhwy1t64
+      - libigdgmm12
+      - libjack0
+      - libjpeg-turbo8
+      - libjxl0.11
+      - liblcms2-2
+      - liblilv-0-0
+      - libllvm21
+      - liblua5.2-0
+      - libmbedcrypto16
+      - libmp3lame0
+      - libmpg123-0t64
+      - libmujs3
+      - libmysofa1
+      - libnorm1t64
+      - libnuma1
+      - libogg0
+      - libopengl0
+      - libopenjp2-7
+      - libopenmpt0t64
+      - libopus0
+      - libpango-1.0-0
+      - libpangocairo-1.0-0
+      - libpangoft2-1.0-0
+      - libpciaccess0
+      - libpgm-5.3-0t64
+      - libpipewire-0.3-0t64
+      - libpipewire-0.3-modules
+      - libpixman-1-0
+      - libpulse0
+      - librabbitmq4
+      - librav1e0.8
+      - librist4
+      - librsvg2-2
+      - librubberband3
+      - libsamplerate0
+      - libserd-0-0
+      - libsharpyuv0
+      - libshine3
+      - libsixel1
+      - libsnappy1v5
+      - libsndfile1
+      - libsndio7.0
+      - libsodium23
+      - libsord-0-0
+      - libsoxr0
+      - libspa-0.2-modules
+      - libspeex1
+      - libsratom-0-0
+      - libsrt1.5-gnutls
+      - libssh-4
+      - libsvtav1enc2
+      - libswresample6
+      - libswscale9
+      - libthai0
+      - libtheoradec2
+      - libtheoraenc2
+      - libtwolame0
+      - libuchardet0
+      - libudfread3
+      - libunibreak6
+      - libva-drm2
+      - libva-wayland2
+      - libva-x11-2
+      - libva2
+      - libvdpau1
+      - libvidstab1.1
+      - libvorbis0a
+      - libvorbisenc2
+      - libvorbisfile3
+      - libvpl2
+      - libvpx12
+      - libvulkan1
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libwebp7
+      - libwebpmux3
+      - libx11-6
+      - libx11-xcb1
+      - libx264-165
+      - libx265-215
+      - libxau6
+      - libxcb-dri3-0
+      - libxcb-glx0
+      - libxcb-present0
+      - libxcb-randr0
+      - libxcb-render0
+      - libxcb-shm0
+      - libxcb-sync1
+      - libxcb-xfixes0
+      - libxcb1
+      - libxdmcp6
+      - libxext6
+      - libxfixes3
+      - libxml2-16
+      - libxpresent1
+      - libxrandr2
+      - libxrender1
+      - libxshmfence1
+      - libxss1
+      - libxv1
+      - libxvidcore4
+      - libxxf86vm1
+      - libzimg2
+      - libzix-0-0
+      - libzmq5
+      - libzstd1
+      - libzvbi0t64
+      - mesa-vulkan-drivers
+      - pipewire-bin
+      - zlib1g
+    build-environment:
+      - PKG_CONFIG_PATH: "$CRAFT_STAGE/usr/lib/x86_64-linux-gnu/pkgconfig:$CRAFT_STAGE/usr/lib/pkgconfig:$CRAFT_STAGE/usr/share/pkgconfig"
+    after: [vapoursynth, libplacebo, svpflow]
+
+  runtime:
+    plugin: nil
+    override-build: |
+      install -Dm755 "$CRAFT_PROJECT_DIR/snap/bin/mpv-svp" \
+        "$CRAFT_PART_INSTALL/usr/bin/mpv-svp"
+      install -Dm644 "$CRAFT_PROJECT_DIR/mpv/mpv.conf" \
+        "$CRAFT_PART_INSTALL/mpv/mpv.conf"
+      install -Dm644 "$CRAFT_PROJECT_DIR/mpv/scripts/svp-toggle.lua" \
+        "$CRAFT_PART_INSTALL/mpv/scripts/svp-toggle.lua"
+      install -Dm644 "$CRAFT_PROJECT_DIR/vapoursynth/svp.vpy" \
+        "$CRAFT_PART_INSTALL/vapoursynth/svp.vpy"
+
+apps:
+  mpv:
+    command: usr/bin/mpv-svp
+    plugs:
+      - home
+      - network
+      - network-bind
+      # The opengl interface also exposes the host's GPU driver libraries.
+      - opengl
+      - audio-playback
+      - audio-record
+      - pipewire
+      - joystick
+      - removable-media
+      - screen-inhibit-control
+      - unity7
+      - x11
+      - wayland
+    environment:
+      LD_LIBRARY_PATH: "$SNAP/usr/lib/python3/dist-packages/vapoursynth:$SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib"
+      PYTHONHOME: "$SNAP/usr"
+      PYTHONPATH: "$SNAP/usr/lib/python3/dist-packages"

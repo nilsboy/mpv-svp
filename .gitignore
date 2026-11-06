@@ -1,0 +1,12 @@
+/build/
+/models/
+/snap/parts/
+/snap/stage/
+/snap/prime/
+/snap/overlay/
+/snap/.snapcraft/
+*.o
+*.so
+*.snap
+/tmp/
+/dist/
