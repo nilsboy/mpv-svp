@@ -92,18 +92,28 @@ jobs:
 
       - name: Probe the snapd environment (on failure)
         if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Dump the state that mpv sees under real snapd confinement, so a
-          # failing smoke test is diagnosable from the step log alone.
+          # Dump the state that mpv sees under real snapd confinement, and
+          # ship the report to the "latest" release so it is downloadable
+          # without any authentication.
           set +e
-          echo "== snap env"
-          snap run --shell mpv-svp.mpv -c 'echo SNAP=$SNAP; echo PYTHONPATH=$PYTHONPATH; echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH; echo XDG_CONFIG_HOME=$XDG_CONFIG_HOME; echo VSSCRIPT_PATH=$VSSCRIPT_PATH'
-          echo "== config dir"
-          snap run --shell mpv-svp.mpv -c 'ls -la "$XDG_CONFIG_HOME/vapoursynth/" 2>&1; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml" 2>&1'
-          echo "== python inside snap"
-          snap run --shell mpv-svp.mpv -c 'python3.14 -c "import vapoursynth; print(vapoursynth.__version__)" 2>&1; python3.14 -m vapoursynth config 2>&1; echo regenerated; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml" 2>&1'
-          echo "== vsscript load"
-          snap run --shell mpv-svp.mpv -c 'MPV_VERBOSE=3 timeout 30 mpv --config-dir="$SNAP/mpv" --profile=svp --vo=null --frames=1 "av://lavfi:testsrc2=duration=1:size=192x192:rate=24,format=yuv420p" 2>&1 | tail -30'
+          out="smoke-probe-r${GITHUB_RUN_NUMBER}.txt"
+          probe() {
+              echo "== snapd probe: $1"
+              snap run --shell mpv-svp.mpv -c "$1"
+          }
+          {
+              echo "hostname/id: $(uname -n) $(id -u):$(id -g)"
+              probe 'echo SNAP=$SNAP; echo PYTHONPATH=$PYTHONPATH; echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH; echo XDG_CONFIG_HOME=$XDG_CONFIG_HOME; echo VSSCRIPT_PATH=$VSSCRIPT_PATH'
+              probe 'ls -la "$XDG_CONFIG_HOME/vapoursynth/"; echo ---; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml"'
+              probe 'python3.14 -c "import vapoursynth; print(vapoursynth.__version__)"; python3.14 -m vapoursynth config; echo regenerated; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml"'
+              probe 'ls "$SNAP/usr/lib/python3.14/config-3.14-x86_64-linux-gnu/" | head; ls -la "$SNAP/usr/lib/python3.14/config-3.14-x86_64-linux-gnu/libpython3.14.so"'
+              probe 'MPV_VERBOSE=3 timeout 30 mpv --config-dir="$SNAP/mpv" --profile=svp --vo=null --frames=1 "av://lavfi:testsrc2=duration=1:size=192x192:rate=24,format=yuv420p"; echo mpv-rc=$?'
+          } > "$out" 2>&1
+          tail -200 "$out"
+          gh release upload latest "$out" --repo "${GITHUB_REPOSITORY}" --clobber || true
 
       - name: Upload smoke diagnostics
         if: failure()
