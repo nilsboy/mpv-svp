@@ -27,12 +27,19 @@ export LIBGL_DRIVERS_PATH="$SNAP/usr/lib/x86_64-linux-gnu/dri"
 export LIBVA_DRIVERS_PATH="$SNAP/usr/lib/x86_64-linux-gnu/dri"
 export __EGL_VENDOR_LIBRARY_FILENAMES="$SNAP/usr/share/glvnd/egl_vendor.d/50_mesa.json"
 
+# Under strict confinement only the snap's private data area is writable, so a
+# host-set XDG_CONFIG_HOME/XDG_CACHE_HOME (e.g. ~/.config on a CI runner) would
+# make VSScript's config bootstrap fail with EACCES. Pin both inside
+# $SNAP_USER_COMMON unconditionally.
+export XDG_CONFIG_HOME="$SNAP_USER_COMMON/config"
+export XDG_CACHE_HOME="$SNAP_USER_COMMON/cache"
+
 # SVP renders on OpenCL (see NOTES.md). ocl-icd reads vendor files from
 # OCL_ICD_VENDORS instead of the compiled-in /etc/OpenCL/vendors, which is the
 # base snap inside the confinement. The staged Intel ICD names an absolute
 # /usr path that would resolve to the base snap, so regenerate the vendor files
 # with $SNAP paths (the revision changes on refresh).
-OCL_VENDORS="${XDG_CACHE_HOME:-$SNAP_USER_COMMON/cache}/opencl/vendors"
+OCL_VENDORS="$XDG_CACHE_HOME/opencl/vendors"
 mkdir -p "$OCL_VENDORS"
 if [ -e "$SNAP/usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so" ]; then
     printf '%s\n' "$SNAP/usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so" \
@@ -64,7 +71,6 @@ if [ -n "${WAYLAND_DISPLAY:-}" ] && [ "${WAYLAND_DISPLAY#/}" = "$WAYLAND_DISPLAY
     export WAYLAND_DISPLAY="${XDG_RUNTIME_DIR%/*}/$WAYLAND_DISPLAY"
 fi
 
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$SNAP_USER_COMMON/config}"
 # VSScript resolves its Python interpreter from an entry keyed by the path the
 # library was loaded from. That path contains the snap revision, so a config
 # written before a refresh no longer matches; regenerate it whenever the current

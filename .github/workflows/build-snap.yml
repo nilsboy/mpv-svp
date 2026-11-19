@@ -109,7 +109,7 @@ jobs:
               probe 'ls -la "$XDG_CONFIG_HOME/vapoursynth/"; echo ---; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml"'
               probe 'python3.14 -c "import vapoursynth; print(vapoursynth.__version__)"; python3.14 -m vapoursynth config; echo regenerated; cat "$XDG_CONFIG_HOME/vapoursynth/vapoursynth.toml"'
               probe 'ls "$SNAP/usr/lib/python3.14/config-3.14-x86_64-linux-gnu/" | head; ls -la "$SNAP/usr/lib/python3.14/config-3.14-x86_64-linux-gnu/libpython3.14.so"'
-              probe 'MPV_VERBOSE=3 timeout 30 mpv --config-dir="$SNAP/mpv" --profile=svp --vo=null --frames=1 "av://lavfi:testsrc2=duration=1:size=192x192:rate=24,format=yuv420p"; echo mpv-rc=$?'
+              probe 'MPV_VERBOSE=3 mpv --config-dir="$SNAP/mpv" --profile=svp --vo=null --frames=1 "av://lavfi:testsrc2=duration=1:size=192x192:rate=24,format=yuv420p"; echo mpv-rc=$?'
           } > "$out" 2>&1
           tail -200 "$out"
 

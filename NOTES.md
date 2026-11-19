@@ -298,3 +298,14 @@ reproduces the CI failure exactly and gave the full picture:
 So `libexpat1` and `libffi8` are now explicit stage-packages of the
 vapoursynth part. Snapcraft's dependency resolution did not pull them with
 the python packages, and the core26 base does not ship them.
+
+The snapd probe report (routed onto the `latest` release as
+`smoke-probe-r<N>.txt` on failure) pinpointed the CI divergence: inside
+`snap run`, `XDG_CONFIG_HOME` leaks in from the host as `/home/runner/.config`
+(the GitHub runner sets it), and the launcher only defaulted it via
+`${XDG_CONFIG_HOME:-...}`. Under strict confinement that path is unwritable,
+so `python3.14 -m vapoursynth config` died with PermissionError and VSScript
+kept failing the same way even after the expat/ffi staging fix. The launcher
+now pins `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` to `$SNAP_USER_COMMON`
+unconditionally. With that, the extracted-snap pipeline passes end to end
+locally (58 frames @ 60/1 fps) inside an `ubuntu:26.04` container.
