@@ -232,7 +232,7 @@ artifact. It publishes the snap on every push:
 Grab the packaged snap from the release page and install it with
 
 ```sh
-sudo snap install --dangerous ./mpv-svp_1.0.0_amd64.snap
+sudo snap install --dangerous ./mpv-svp_<version>_amd64.snap
 ```
 
 ## Notes

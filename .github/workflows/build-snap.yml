@@ -37,6 +37,18 @@ jobs:
           sudo iptables -P FORWARD ACCEPT
           sudo lxc network set lxdbr0 ipv6.address none
 
+      - name: Stamp the snap version
+        run: |
+          # Tag pushes: derive the version from the tag (v1.2.3 -> 1.2.3) so the
+          # packed snap matches its release. Everything else (main pushes, PRs,
+          # manual dispatch): a dev version per the repo's versioning rules.
+          case "$GITHUB_REF_TYPE:$GITHUB_REF_NAME" in
+            tag:*) ver="${GITHUB_REF_NAME#v}" ;;
+            *)     ver="1.0.0-dev.${GITHUB_RUN_NUMBER}" ;;
+          esac
+          sed -i "s/^version:.*/version: \"$ver\"/" snap/snapcraft.yaml
+          echo "snap version: $ver"
+
       - name: Pack the snap
         run: sudo snapcraft pack
 
