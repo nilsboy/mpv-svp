@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Kept for consumers that source this file; unused here.
+# shellcheck disable=SC2034
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Building on the workspace is unreliable when it is a network mount, so the
 # build tree defaults to a local directory.

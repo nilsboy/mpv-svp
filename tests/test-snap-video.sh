@@ -24,29 +24,29 @@ echo "==> snapcraft.yaml builds with the X11/Wayland dev packages"
 # x11, xv, x11egl and x11vk outputs are silently compiled out.
 for pkg in libxss-dev libxv-dev libxpresent-dev libxrandr-dev libx11-dev \
            libwayland-dev wayland-protocols; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> snapcraft.yaml stages the X11/Wayland runtime"
 for pkg in libxss1 libxv1 libxpresent1 libxrandr2 libgl1 libglx0 libopengl0 \
            libegl-mesa0 libglx-mesa0 libxcb-glx0 libxxf86vm1 \
            libwayland-client0 libwayland-cursor0 libwayland-egl1; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> snapcraft.yaml stages the Vulkan driver"
 for pkg in mesa-vulkan-drivers libgl1-mesa-dri libdisplay-info3 libllvm21; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> snapcraft.yaml stages the OpenCL ICDs (SVP renders on OpenCL)"
 for pkg in intel-opencl-icd mesa-opencl-icd ocl-icd-libopencl1; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> snapcraft.yaml stages the VA-API drivers (--hwdec)"
 for pkg in intel-media-va-driver i965-va-driver libigdgmm12 libva2; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> launcher points the GPU stacks at the bundled drivers"
@@ -75,14 +75,14 @@ echo "==> installed mpv offers x11 and wayland video outputs"
 if command -v "$MPV" >/dev/null; then
     vos="$("$MPV" --vo=help 2>&1 || true)"
     for vo in x11 xv wlshm; do
-        if ! grep -qE "^[[:space:]]*$vo[[:space:]]" <<<"$vos"; then
+        if ! grep -qE "^[[:space:]]*${vo}[[:space:]]" <<<"$vos"; then
             echo "FAIL: $MPV has no '$vo' video output"
             fail=1
         fi
     done
     contexts="$("$MPV" --gpu-context=help 2>&1 || true)"
     for ctx in x11egl wayland; do
-        if ! grep -qE "^[[:space:]]*$ctx[[:space:]]" <<<"$contexts"; then
+        if ! grep -qE "^[[:space:]]*${ctx}[[:space:]]" <<<"$contexts"; then
             echo "FAIL: $MPV has no '$ctx' GPU context"
             fail=1
         fi

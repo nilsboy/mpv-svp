@@ -177,3 +177,37 @@ itself. Without the launcher (source checkout) the same `--vf-remove=@svp` is
 the user's responsibility.
 
 
+
+
+## CI
+
+`.github/workflows/ci.yml` runs shellcheck plus the test suite on
+`ubuntu-24.04`. It intentionally uses the node24-runtimed first-party action
+majors: `actions/checkout@v5` and `actions/setup-python@v6` (node20-based
+majors surface deprecation warnings since GitHub enforces node24 for
+JavaScript actions).
+
+The test job reproduces a minimal headless SVP stack so `test-svp-vpy.sh` runs
+end-to-end (CPU fallback) instead of skipping:
+
+- `pip install vapoursynth==79` — the R79 manylinux wheel bundles `vspipe`
+  (console script entry point) and autoloads plugins from
+  `<site-packages>/vapoursynth/plugins`, matching the R74+ pip-based layout.
+  VapourSynth's own `pip install vapoursynth` docs apply; the version is pinned
+  to 79 because the GPL svpflow plugins need API 3, which R80 removed.
+- `python3 -m vapoursynth config` — since R74 vspipe refuses to start until
+  `vapoursynth config` has recorded the Python paths (written to
+  `~/.config/vapoursynth/vapoursynth.toml`).
+- `scripts/install-svpflow.sh` with `PREFIX` inside the workspace so the
+  `patchelf --clear-execstack`'ed plugins land in the wheel's autoload
+  directory; no sudo needed. `patchelf` comes from apt, `unzip` is already on
+  the runner (installed again anyway for clarity).
+- The suite runs with `<site-packages>/vapoursynth` prepended to `PATH` (puts
+  the raw `vspipe` binary on it, ahead of the console-script wrapper) and as
+  `LD_LIBRARY_PATH` so `libvsscript.so` resolves.
+
+Locally this was verified by unpacking the wheel into a directory, running
+`vapoursynth config` against it and running the full suite (all PASS,
+mpv/snap tests skip or use static checks). Cleaned-up shellcheck
+errors/warnings (SC1087/SC2034/SC2097/SC2098) with `--severity=warning` as the
+CI gate; info-level findings (e.g. SC2012 `ls` hints) do not fail the build.

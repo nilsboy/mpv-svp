@@ -8,6 +8,8 @@
       launcher appends `--vf-remove=@svp` when the user supplies their own filter
 - [x] add CPU-search reduction options (`preset=realtime`, `scale`, `coarse`,
       `skipfinest`) since the motion search cannot be GPU-offloaded
+- [x] add GitHub Actions CI (shellcheck + test suite with the VapourSynth R79
+      pip wheel and svpflow plugins, node24-runtimed actions)
 
 ## Follow-ups
 
@@ -17,6 +19,8 @@
       unavailable" when `SmoothFps` falls back to CPU
 - [ ] benchmark real 1080p→60 on the target; try `preset=realtime` and/or
       `scale=0.75` if `performance` does not sustain 60 fps
+- [ ] build the snap in CI and attach it to releases (snapcraft action; the
+      full mpv/VapourSynth/libplacebo build is long, so run it on tags)
 - [ ] verify Wayland/PipeWire playback on a graphical session
 
 ## Not worth pursuing

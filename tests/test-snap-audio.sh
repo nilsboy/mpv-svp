@@ -22,7 +22,7 @@ require "$YAML" '^[[:space:]]*-[[:space:]]*pipewire[[:space:]]*$'
 
 echo "==> snapcraft.yaml stages the pipewire runtime"
 for pkg in libpipewire-0.3-modules libspa-0.2-modules pipewire-bin; do
-    require "$YAML" "^[[:space:]]*-[[:space:]]*$pkg[[:space:]]*$"
+    require "$YAML" "^[[:space:]]*-[[:space:]]*${pkg}[[:space:]]*$"
 done
 
 echo "==> launcher points pipewire at the bundled paths"

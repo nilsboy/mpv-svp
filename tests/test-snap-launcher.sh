@@ -24,7 +24,7 @@ fi
 
 rewrite() {
     # shellcheck disable=SC1090
-    SNAP="$SNAP" sh -c '
+    sh -c '
         set -eu
         SNAP="'"$SNAP"'"
         . "'"$WORK"'/rewrite.sh"

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Lint shell scripts
+        run: shellcheck --severity=warning scripts/*.sh tests/*.sh snap/bin/mpv-svp
+
+  tests:
+    name: tests (shell + SVP pipeline)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # node24-runtimed majors: actions/checkout@v5, actions/setup-python@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install patchelf and unzip
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q patchelf unzip
+
+      - name: Install VapourSynth R79 (pip wheel, the R79 that still serves API 3)
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet "vapoursynth==79"
+          python3 -m vapoursynth config
+
+      - name: Install SVPflow plugins into the wheel's autoload directory
+        run: scripts/install-svpflow.sh
+        env:
+          PREFIX: ${{ github.workspace }}/tmp/svpflow-prefix
+
+      - name: Run tests
+        run: |
+          vsdir="$(python3 -c 'import os, vapoursynth; print(os.path.dirname(vapoursynth.__file__))')"
+          export PATH="$vsdir:$PATH"
+          export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$vsdir"
+          tests/run-tests.sh

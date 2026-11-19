@@ -211,6 +211,13 @@ Covers the vpy script syntax/load and frame-rate conversion, the mpv
 stack, the snap audio payload, and that the X11/Wayland video outputs are built
 and bundled. Actual GPU interpolation needs a GPU and is verified manually.
 
+The same suite runs in CI (`.github/workflows/ci.yml`): a shellcheck job over
+all shell sources, and a test job that installs the VapourSynth R79 pip wheel
+plus the GPL SVPflow plugins so the vpy end-to-end interpolation test runs for
+real. mpv-bound tests skip gracefully when `mpv` is not on the runner. The
+workflow uses the node24-runtimed action majors (`actions/checkout@v5`,
+`actions/setup-python@v6`).
+
 ## Notes
 
 See [NOTES.md](NOTES.md) for design and environment details.
