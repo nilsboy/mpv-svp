@@ -67,7 +67,9 @@ jobs:
           # must raise the frame rate from 24 to ~60 fps; without it, output
           # stays at 24.
           mpv-svp.mpv --profile=svp --video-sync=audio \
-            --o=svp-out.mkv --of=matroska --ovc=ffv1 svp-in.mkv
+            --o=svp-out.mkv --of=matroska --ovc=ffv1 \
+            --log-file=svp-mpv.log \
+            svp-in.mkv
 
           # ~1 s of input at 24 fps must produce ~1 s of output at 60 fps.
           frames="$(ffprobe -v error -count_frames -select_streams v:0 \
@@ -83,6 +85,17 @@ jobs:
             if (fps < 55 || fps > 65) { print "FAIL: wrong fps"; exit 1 }
             printf "PASS: interpolation raised 24 fps to %.2f fps\n", fps
           }'
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-diagnostics
+          path: |
+            svp-mpv.log
+            svp-in.mkv
+            svp-out.mkv
+          if-no-files-found: ignore
 
       - name: Upload snap artifact
         uses: actions/upload-artifact@v7
