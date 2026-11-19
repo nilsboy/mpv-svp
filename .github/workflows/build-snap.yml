@@ -17,6 +17,9 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+    outputs:
+      # Lets the release job publish even when the smoke test fails.
+      pack: ${{ steps.pack.conclusion }}
     steps:
       - uses: actions/checkout@v7
 
@@ -50,6 +53,7 @@ jobs:
           echo "snap version: $ver"
 
       - name: Pack the snap
+        id: pack
         run: sudo snapcraft pack
 
       - name: Smoke-test the snap (headless SVP interpolation)
@@ -98,16 +102,22 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload snap artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: mpv-svp-snap
           path: ./*.snap
-          if-no-files-found: error
+          if-no-files-found: ignore
 
   release:
     name: Publish GitHub release
     needs: build
-    if: github.event_name == 'push'
+    # Publish whenever the snap itself packed, so debug builds reach the
+    # release page even while the smoke test is still failing.
+    if: >-
+      github.event_name == 'push'
+      && always()
+      && needs.build.outputs.pack == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

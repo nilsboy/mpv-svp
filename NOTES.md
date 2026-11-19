@@ -271,3 +271,11 @@ VapourSynth's meson builds need Cython only, which is already listed.)
 died with `ffmpeg: command not found` — the GitHub ubuntu-24.04 runner image
 does not ship ffmpeg in PATH. The smoke step now apt-installs ffmpeg
 (provides both `ffmpeg` for input generation and `ffprobe` for verification).
+
+2026-11-19 smoke-test reproduction: the snap installs and mpv inside it fails
+with "Failed to initialize VapourSynth VSScript library: Python executable and
+library path couldn't be determined despite automatic configuration." — i.e.
+the launcher's VapourSynth config bootstrap is not taking effect. The build
+job now uploads the packed snap regardless of the smoke result and the release
+job publishes `latest` whenever packing succeeded (`needs.build.outputs.pack
+== 'success'`), so failed runs are debuggable from public release assets.
