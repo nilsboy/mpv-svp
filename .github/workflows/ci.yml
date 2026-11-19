@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Pushes run only the snap build/release workflow; tests run here.
   pull_request:
   workflow_dispatch:
 

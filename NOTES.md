@@ -250,3 +250,10 @@ release `snapshot-r<N>` (N = the run number, matching the stamped snap version
 archives are never touched, so old builds accumulate as releases. Prune them
 manually (`gh release list` / `gh release delete snapshot-r<N>`) if the list
 grows too long.
+
+
+## Workflow triggers
+
+Pushes to `main` run only `build-snap.yml` (snap build + releases);
+`ci.yml` (shellcheck + tests) runs on pull requests and manual
+`workflow_dispatch` runs. This keeps pushes producing releases only.
