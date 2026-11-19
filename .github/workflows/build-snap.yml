@@ -159,13 +159,6 @@ jobs:
           name: mpv-svp-snap
           path: release-files/
 
-      - name: Download probe report
-        uses: actions/download-artifact@v8
-        with:
-          name: smoke-probe
-          path: probe-report/
-          if-no-files-found: ignore
-
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
