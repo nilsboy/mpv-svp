@@ -1,0 +1,121 @@
+name: build-snap
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: build-snap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Pack mpv-svp snap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install snapcraft and LXD
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snap install lxd
+          sudo lxd waitready --timeout=60
+          sudo lxd init --auto
+          # GitHub runners ship Docker, which sets the iptables FORWARD
+          # policy to DROP; the LXD bridge forwards through that chain, so
+          # the build instance boots with no outbound network and pack
+          # dies with "A network related operation failed in a context of
+          # no network access". Re-allow forwarding, and drop the
+          # non-routable IPv6 the runner hands the instance (same
+          # symptom). Both must run after `lxd init --auto`, which creates
+          # lxdbr0.
+          sudo iptables -P FORWARD ACCEPT
+          sudo lxc network set lxdbr0 ipv6.address none
+
+      - name: Pack the snap
+        run: sudo snapcraft pack
+
+      - name: Smoke-test the snap (headless SVP interpolation)
+        run: |
+          sudo snap install --dangerous ./*.snap
+          snap list mpv-svp
+
+          ffmpeg -hide_banner -loglevel error \
+            -f lavfi -i testsrc2=duration=1:size=256x256:rate=24 \
+            -pix_fmt yuv420p -an svp-in.mkv
+
+          # Encode the clip through the snap's SVP pipeline: the interpolation
+          # must raise the frame rate from 24 to ~60 fps; without it, output
+          # stays at 24.
+          mpv-svp.mpv --profile=svp --video-sync=audio \
+            --o=svp-out.mkv --of=matroska --ovc=ffv1 svp-in.mkv
+
+          # ~1 s of input at 24 fps must produce ~1 s of output at 60 fps.
+          frames="$(ffprobe -v error -count_frames -select_streams v:0 \
+            -show_entries stream=nb_read_frames \
+            -of default=noprint_wrappers=1:nokey=1 svp-out.mkv)"
+          rate="$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=avg_frame_rate -of csv=p=0 svp-out.mkv)"
+          echo "output: ${frames} frames @ ${rate} fps"
+          awk -v frames="$frames" -v rate="$rate" 'BEGIN {
+            if (frames < 55 || frames > 65) { print "FAIL: wrong frame count"; exit 1 }
+            split(rate, a, "/")
+            fps = a[1] / a[2]
+            if (fps < 55 || fps > 65) { print "FAIL: wrong fps"; exit 1 }
+            printf "PASS: interpolation raised 24 fps to %.2f fps\n", fps
+          }'
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-svp-snap
+          path: ./*.snap
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: mpv-svp-snap
+          path: release-files/
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+        run: |
+          # v* tag pushes: an exact release with generated notes.
+          # main pushes: replace the rolling "latest" prerelease snapshot.
+          if [ "$REF_TYPE" = "tag" ]; then
+            gh release create "$REF" release-files/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$REF" \
+              --generate-notes \
+            || gh release upload "$REF" release-files/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release delete latest --yes \
+              --repo "${GITHUB_REPOSITORY}" \
+              --cleanup-tag || true
+            gh release create latest release-files/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "$SHA" \
+              --title "Latest snapshot (automated)" \
+              --prerelease \
+              --notes "Automated snapshot of ${GITHUB_REPOSITORY}@${SHA}, built by build-snap.yml (run ${GITHUB_RUN_ID}). Replaced on every push."
+          fi

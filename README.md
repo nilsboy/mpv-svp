@@ -218,6 +218,23 @@ real. mpv-bound tests skip gracefully when `mpv` is not on the runner. The
 workflow uses the node24-runtimed action majors (`actions/checkout@v5`,
 `actions/setup-python@v6`).
 
+## Snap releases
+
+`.github/workflows/build-snap.yml` (modelled on mpv-practical-rife) builds the
+snap on every push and pull request with snapcraft in LXD, smoke-tests it
+headless (a 1 s 24 fps test clip encoded through the snap's `--profile=svp`
+must come out at ~60 fps, verified with ffprobe) and uploads it as a workflow
+artifact. It publishes the snap on every push:
+
+- push to `main`: the rolling `latest` prerelease (replaced on every push)
+- pushed `v*` tags: an exact release with generated notes
+
+Grab the packaged snap from the release page and install it with
+
+```sh
+sudo snap install --dangerous ./mpv-svp_1.0.0_amd64.snap
+```
+
 ## Notes
 
 See [NOTES.md](NOTES.md) for design and environment details.

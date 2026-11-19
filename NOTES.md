@@ -211,3 +211,32 @@ Locally this was verified by unpacking the wheel into a directory, running
 mpv/snap tests skip or use static checks). Cleaned-up shellcheck
 errors/warnings (SC1087/SC2034/SC2097/SC2098) with `--severity=warning` as the
 CI gate; info-level findings (e.g. SC2012 `ls` hints) do not fail the build.
+
+
+## Snap CI releases
+
+`build-snap.yml` (mirrors mpv-practical-rife) packs the snap with snapcraft in
+LXD on `ubuntu-24.04`. The Docker FORWARD-chain / lxdbr0 IPv6 workaround
+before `snapcraft pack` comes from that workflow verbatim. Releases: rolling
+`latest` prerelease on `main` pushes, exact releases on `v*` tags.
+
+The snap smoke test differs from RIFE's (`bench` app there): this snap has
+strict confinement and no bench app, and the whole mpv pipeline should be
+exercised. It headlessly proves that playback through the snap interpolates:
+
+1. `ffmpeg` (preinstalled on runners) generates a 1 s 256x256 24 fps yuv420p
+   clip (`testsrc2`, `-an`).
+2. `mpv-svp.mpv --profile=svp ... --o=svp-out.mkv --of=matroska --ovc=ffv1`
+   encodes it through the snap's launcher + `[svp]` profile. Encode mode avoids
+   any dependency on a display/audio; `--video-sync=audio` overrides the
+   profile's `display-resample`, meaningless without a display clock.
+   `--untimed` is dropped (encode mode already runs unthrottled).
+3. `ffprobe` checks the output: ~55–65 frames and avg_frame_rate ~60 — i.e.
+   SVP raised 24 fps to 60. A silent SVP failure would leave 24 frames; ffv1
+   (built into libavcodec) needs no extra encoder in the snap.
+   Terminal-output parsing (RIFE greps its bench log) is explicitly avoided:
+   mpv's status line is unreliable without a controlling terminal.
+
+Caveat: the snap is `base: core26`; the runner needs a snapd new enough to
+install and run it, and snapcraft fetches the core26 build-base image inside
+LXD. If the runner image lags, bump `runs-on` to a newer image.
