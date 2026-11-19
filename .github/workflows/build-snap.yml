@@ -92,12 +92,11 @@ jobs:
 
       - name: Probe the snapd environment (on failure)
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Dump the state that mpv sees under real snapd confinement, and
-          # ship the report to the "latest" release so it is downloadable
-          # without any authentication.
+          # Dump the state that mpv sees under real snapd confinement; the
+          # report is uploaded as an artifact and moved onto the published
+          # release by the release job (which has write permission), so it is
+          # reachable from the outside without any authentication.
           set +e
           out="smoke-probe-r${GITHUB_RUN_NUMBER}.txt"
           probe() {
@@ -113,7 +112,14 @@ jobs:
               probe 'MPV_VERBOSE=3 timeout 30 mpv --config-dir="$SNAP/mpv" --profile=svp --vo=null --frames=1 "av://lavfi:testsrc2=duration=1:size=192x192:rate=24,format=yuv420p"; echo mpv-rc=$?'
           } > "$out" 2>&1
           tail -200 "$out"
-          gh release upload latest "$out" --repo "${GITHUB_REPOSITORY}" --clobber || true
+
+      - name: Upload probe report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-probe
+          path: smoke-probe-r*.txt
+          if-no-files-found: ignore
 
       - name: Upload smoke diagnostics
         if: failure()
@@ -153,6 +159,13 @@ jobs:
           name: mpv-svp-snap
           path: release-files/
 
+      - name: Download probe report
+        uses: actions/download-artifact@v8
+        with:
+          name: smoke-probe
+          path: probe-report/
+          if-no-files-found: ignore
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -180,7 +193,14 @@ jobs:
               --target "$SHA" \
               --title "Latest snapshot (automated)" \
               --prerelease \
-              --notes "Automated snapshot of ${GITHUB_REPOSITORY}@${SHA}, built by build-snap.yml (run ${GITHUB_RUN_ID}). Replaced on every push; old snapshots stay as snapshot-r<N> releases."
+              --notes "Automated snapshot of ${GITHUB_REPOSITORY}@${SHA}, built by build-snap.yml (run ${GITHUB_RUN_ID}). Replaced on every push; old snapshots stay as snapshot-r<N> releases, failing smoke runs attach smoke-probe-r<N>.txt."
+            # A failed smoke run publishes its snapd diagnostic report so it
+            # can be fetched from the release page without authentication.
+            if compgen -G 'probe-report/*' > /dev/null; then
+              gh release upload latest probe-report/* \
+                --repo "${GITHUB_REPOSITORY}" \
+                --clobber
+            fi
 
             archive="snapshot-r${GITHUB_RUN_NUMBER}"
             gh release create "$archive" release-files/* \
