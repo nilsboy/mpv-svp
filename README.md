@@ -226,7 +226,9 @@ headless (a 1 s 24 fps test clip encoded through the snap's `--profile=svp`
 must come out at ~60 fps, verified with ffprobe) and uploads it as a workflow
 artifact. It publishes the snap on every push:
 
-- push to `main`: the rolling `latest` prerelease (replaced on every push)
+- push to `main`: the rolling `latest` prerelease (replaced on every push),
+  plus an archived per-build snapshot release `snapshot-r<N>` so old versions
+  stay available
 - pushed `v*` tags: an exact release with generated notes
 
 Grab the packaged snap from the release page and install it with

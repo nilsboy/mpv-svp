@@ -111,7 +111,8 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           # v* tag pushes: an exact release with generated notes.
-          # main pushes: replace the rolling "latest" prerelease snapshot.
+          # main pushes: refresh the rolling "latest" pointer and archive each
+          # build as its own snapshot release, so old snapshots stay available.
           if [ "$REF_TYPE" = "tag" ]; then
             gh release create "$REF" release-files/* \
               --repo "${GITHUB_REPOSITORY}" \
@@ -129,5 +130,16 @@ jobs:
               --target "$SHA" \
               --title "Latest snapshot (automated)" \
               --prerelease \
-              --notes "Automated snapshot of ${GITHUB_REPOSITORY}@${SHA}, built by build-snap.yml (run ${GITHUB_RUN_ID}). Replaced on every push."
+              --notes "Automated snapshot of ${GITHUB_REPOSITORY}@${SHA}, built by build-snap.yml (run ${GITHUB_RUN_ID}). Replaced on every push; old snapshots stay as snapshot-r<N> releases."
+
+            archive="snapshot-r${GITHUB_RUN_NUMBER}"
+            gh release create "$archive" release-files/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "$SHA" \
+              --title "Snapshot 1.0.0-dev.${GITHUB_RUN_NUMBER}" \
+              --prerelease \
+              --notes "Archived snapshot of ${GITHUB_REPOSITORY}@${SHA} (run ${GITHUB_RUN_ID}), the snap packaged as 1.0.0-dev.${GITHUB_RUN_NUMBER}." \
+            || gh release upload "$archive" release-files/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
           fi

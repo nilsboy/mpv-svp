@@ -240,3 +240,13 @@ exercised. It headlessly proves that playback through the snap interpolates:
 Caveat: the snap is `base: core26`; the runner needs a snapd new enough to
 install and run it, and snapcraft fetches the core26 build-base image inside
 LXD. If the runner image lags, bump `runs-on` to a newer image.
+
+
+## Keeping old releases
+
+Every `main` push publishes both the rolling `latest` pointer and an archived
+release `snapshot-r<N>` (N = the run number, matching the stamped snap version
+`1.0.0-dev.N`). Only the `latest` pointer is deleted and recreated; snapshot
+archives are never touched, so old builds accumulate as releases. Prune them
+manually (`gh release list` / `gh release delete snapshot-r<N>`) if the list
+grows too long.
