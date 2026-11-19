@@ -34,6 +34,8 @@ parts:
       - meson
       - ninja-build
       - pkg-config
+      # libplacebo's glsl_preproc source generator imports jinja2.
+      - python3-jinja2
       - libvulkan-dev
       - liblcms2-dev
     build-environment:

@@ -257,3 +257,12 @@ grows too long.
 Pushes to `main` run only `build-snap.yml` (snap build + releases);
 `ci.yml` (shellcheck + tests) runs on pull requests and manual
 `workflow_dispatch` runs. This keeps pushes producing releases only.
+
+
+## CI snap build troubleshooting
+
+2026-11-19: `snapcraft pack` failed in CI at the libplacebo part: the
+`glsl_preproc` source generator (`tools/glsl_preproc`) imports `jinja2`, which
+the author's machine provides but the core26 build instance does not. Fixed by
+adding `python3-jinja2` to the libplacebo `build-packages`. (mpv's and
+VapourSynth's meson builds need Cython only, which is already listed.)
