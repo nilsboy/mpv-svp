@@ -279,3 +279,22 @@ the launcher's VapourSynth config bootstrap is not taking effect. The build
 job now uploads the packed snap regardless of the smoke result and the release
 job publishes `latest` whenever packing succeeded (`needs.build.outputs.pack
 == 'success'`), so failed runs are debuggable from public release assets.
+
+Debugging the failed smoke tests took the actual snap apart (the workflow now
+publishes every successfully packed build, so failed runs ship debuggable
+release assets). The extracted snap run inside an `ubuntu:26.04` container
+reproduces the CI failure exactly and gave the full picture:
+
+1. `$SNAP/usr/bin/python3.14` did not start at all: the snap lacks
+   `libexpat.so.1`.
+2. With expat grafted in, `import vapoursynth` failed: `_ctypes` needs
+   `libffi.so.8` — also not staged.
+3. With both, `python3.14 -m vapoursynth config` writes the VSScript config
+   (keyed by `$SNAP/usr/lib/python3/dist-packages/vapoursynth/libvsscript.so`,
+   matching `VSSCRIPT_PATH`), mpv's vapoursynth filter initialises and the
+   full SVP encode smoke test passes: 1 s of 24 fps in → 58 frames @ 60/1 out
+   (CPU rendering, exactly as on the GPU-less runner).
+
+So `libexpat1` and `libffi8` are now explicit stage-packages of the
+vapoursynth part. Snapcraft's dependency resolution did not pull them with
+the python packages, and the core26 base does not ship them.

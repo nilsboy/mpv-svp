@@ -67,6 +67,12 @@ parts:
       - libpython3.14-stdlib
       - python3.14-minimal
       - python3.14
+      # Not staged by snapcraft's dependency resolution but needed by the
+      # staged interpreter and its _ctypes/pyexpat modules; without them
+      # `python3.14 -m vapoursynth config` dies and VSScript cannot resolve
+      # its Python (mpv: "Failed to initialize VapourSynth VSScript library").
+      - libexpat1
+      - libffi8
       - libzimg2
       - libgomp1
     after: [libplacebo]
