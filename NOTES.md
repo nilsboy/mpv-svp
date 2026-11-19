@@ -266,3 +266,8 @@ Pushes to `main` run only `build-snap.yml` (snap build + releases);
 the author's machine provides but the core26 build instance does not. Fixed by
 adding `python3-jinja2` to the libplacebo `build-packages`. (mpv's and
 VapourSynth's meson builds need Cython only, which is already listed.)
+
+2026-11-19 follow-up: the pack succeeded with the fix; the smoke test then
+died with `ffmpeg: command not found` — the GitHub ubuntu-24.04 runner image
+does not ship ffmpeg in PATH. The smoke step now apt-installs ffmpeg
+(provides both `ffmpeg` for input generation and `ffprobe` for verification).
